@@ -96,6 +96,7 @@ def create_redshift_access(perms, ddb, redshift, dbuser, dbpw, user):
     
 
 def lambda_handler(event, context):
+    print(event)
     cognito_client = boto3.client('cognito-idp')
     ssm = boto3.client('ssm')
     params = ssm.get_parameters_by_path(Path='/nnedl/', Recursive=True)['Parameters']
@@ -125,15 +126,20 @@ def lambda_handler(event, context):
         }
     )['Items']
     policy = create_policy(response, ddb_client)
+    s3_resources = list(map(lambda x: x['Resource'],list(filter(lambda x: 's3:GetObject' in x['Action'] , policy['Statement']))))
     p = json.dumps(policy)
     sts_client = boto3.client('sts')
     response2 = sts_client.assume_role(
         RoleArn=role,
         RoleSessionName='datalake',
+        DurationSeconds=3600,
         Policy=p)
     redshift_client = boto3.client('redshift')
     redshift_creds = create_redshift_access(response, ddb_client, redshift_client, dbuser, dbpw, user)
     resp = {}
-    resp['s3'] = response2['Credentials']
+    resp['s3'] = {}
+    resp['s3']['creds'] = response2['Credentials']
+    resp['s3']['resources'] = s3_resources
     resp['redshift'] = redshift_creds
-    return json.dumps(resp, default=str)
+    del resp['s3']['creds']['Expiration']
+    return resp # json.dumps(resp, default=str)
